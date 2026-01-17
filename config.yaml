@@ -1,0 +1,443 @@
+# ============================================================================
+# Qwen3VL RAG System Configuration
+# ============================================================================
+# This file contains all adjustable parameters for RAG performance tuning.
+# Edit values here to customize your RAG system behavior.
+# ============================================================================
+
+# ============================================================================
+# EMBEDDING API CONFIGURATION
+# ============================================================================
+embedding:
+  # Qwen3-VL-Embedding API endpoint
+  api_url: "http://100.126.235.19:8888/v1/embeddings"
+  
+  # Model name (for reference)
+  model_name: "Qwen3-VL-Embedding-8B"
+  
+  # API timeout in seconds
+  timeout: 60
+  
+  # Batch size for embedding generation
+  batch_size: 32
+  
+  # Maximum retries on API failure
+  max_retries: 3
+  
+  # Retry delay in seconds
+  retry_delay: 1
+
+# ============================================================================
+# RERANKER API CONFIGURATION (Future)
+# ============================================================================
+reranker:
+  # Enable/disable reranker (set to true when endpoint is available)
+  enabled: true
+  
+  # Qwen3-VL-Reranker API endpoint (to be configured)
+  api_url: "http://100.126.235.19:1111/v1/rerank"  # Update when available
+  
+  # Model name
+  model_name: "Qwen3-VL-Reranker-8B"
+  
+  # API timeout in seconds
+  timeout: 30
+  
+  # Number of candidates to rerank
+  rerank_top_k: 20
+  
+  # Final number of results after reranking
+  final_top_k: 5
+  
+  # Maximum retries
+  max_retries: 3
+
+# ============================================================================
+# DOCUMENT PROCESSING CONFIGURATION
+# ============================================================================
+document_processing:
+  # Text chunking strategy
+  chunking:
+    # Size of each text chunk in characters
+    chunk_size: 500
+    
+    # Overlap between consecutive chunks in characters
+    chunk_overlap: 50
+    
+    # Minimum chunk size (discard smaller chunks)
+    min_chunk_size: 50
+    
+    # Maximum chunk size (split larger chunks)
+    max_chunk_size: 2000
+    
+    # Sentence splitting (try to break at sentence boundaries)
+    respect_sentence_boundary: true
+    
+    # Paragraph splitting (try to keep paragraphs together)
+    respect_paragraph_boundary: true
+  
+  # PDF processing settings
+  pdf:
+    # PDF Processing: Granite VLM via Docling
+    # Vision-based extraction using IBM Granite VL API
+    mode_2:
+      # IBM Granite VL API endpoint
+      api_url: "http://100.126.235.19:2222/v1/chat/completions"
+      
+      # Model name
+      model_name: "ibm-granite/granite-docling-258M"
+      
+      # API timeout in seconds
+      timeout: 120
+      
+      # Maximum retries
+      max_retries: 3
+      
+      # DPI for rendering PDF pages as images
+      dpi: 150
+      
+      # Image format to send to VL model
+      image_format: "PNG"
+      
+      # JPEG quality if using JPEG
+      jpeg_quality: 85
+      
+      # System prompt for PDF extraction
+      system_prompt: "You are an expert document analyzer. Extract all text content from the provided PDF page image, preserving structure and formatting."
+      
+      # User prompt template for each page
+      user_prompt: "Convert this page to docling."
+      
+      # Image scale for Docling (2.0 = ~144 DPI, higher = better quality)
+      images_scale: 2.0
+  
+  # Parallel processing settings
+  parallel:
+    # Enable parallel processing for file ingestion
+    enabled: true
+    
+    # Parallel mode: "process" or "thread"
+    # - "process": True parallel processing, bypasses Python GIL (MUCH FASTER)
+    # - "thread": Thread-based, limited by GIL (slower but more compatible)
+    # Recommended: "process" for maximum speed
+    mode: "process"
+    
+    # Number of parallel workers (null = auto-detect CPU count)
+    # Recommended: leave as null to use all CPU cores (24 cores on your system)
+    max_workers: null
+    
+    # Minimum files to trigger parallel processing
+    # For small file counts, sequential is faster
+    min_files_for_parallel: 2
+  
+  # Supported file extensions
+  supported_extensions:
+    - ".txt"
+    - ".md"
+    - ".pdf"
+    - ".py"
+    - ".js"
+    - ".html"
+    - ".css"
+    - ".json"
+    - ".xml"
+
+# ============================================================================
+# RETRIEVAL CONFIGURATION
+# ============================================================================
+retrieval:
+  # Default number of documents to retrieve
+  top_k: 5
+  
+  # Minimum similarity score threshold (0.0 to 1.0)
+  # Results below this score will be filtered out
+  min_similarity_score: 0.0
+  
+  # Maximum similarity score (for filtering duplicates)
+  max_similarity_score: 1.0
+  
+  # Enable/disable diversity in results
+  enable_diversity: false
+  
+  # Diversity penalty factor (0.0 to 1.0)
+  # Higher values encourage more diverse results
+  diversity_penalty: 0.3
+  
+  # Enable semantic search enhancements
+  enable_query_expansion: false
+  
+  # Enable hybrid search (if implemented)
+  enable_hybrid_search: false
+
+# ============================================================================
+# VECTOR STORE CONFIGURATION
+# ============================================================================
+vector_store:
+  # Type: faiss or milvus
+  type: "faiss"
+  
+  # FAISS settings
+  faiss:
+    # Storage path
+    store_path: "vector_store"
+    
+    # Index file name
+    index_file: "faiss_index.bin"
+    
+    # Metadata file name
+    metadata_file: "metadata.json"
+    
+    # Index type: Flat, IVF, HNSW
+    index_type: "Flat"
+    
+    # Number of clusters for IVF (if using IVF index)
+    n_clusters: 100
+    
+    # Search parameter nprobe for IVF
+    nprobe: 10
+  
+  # Milvus settings
+  milvus:
+    # Host address
+    host: "localhost"
+    
+    # Port number
+    port: 19530
+    
+    # Authentication (leave empty if not using)
+    user: ""
+    password: ""
+    
+    # Database name
+    db_name: "default"
+    
+    # Collection name
+    collection_name: "rag_documents"
+    
+    # Index type: IVF_FLAT, IVF_SQ8, IVF_PQ, HNSW, FLAT
+    index_type: "IVF_FLAT"
+    
+    # Metric type: L2, IP, COSINE
+    metric_type: "L2"
+    
+    # Index parameters
+    index_params:
+      nlist: 128  # Number of clusters
+      m: 8        # For IVF_PQ
+      nbits: 8    # For IVF_PQ
+    
+    # Search parameters
+    search_params:
+      nprobe: 10  # Number of clusters to search
+      ef: 64      # For HNSW
+
+# ============================================================================
+# RAG ENGINE CONFIGURATION
+# ============================================================================
+rag:
+  # Enable query preprocessing
+  preprocess_query: true
+  
+  # Enable response postprocessing
+  postprocess_results: true
+  
+  # Context window size for LLM integration
+  max_context_length: 4000
+  
+  # Context formatting
+  context_format:
+    # Include source information
+    include_source: true
+    
+    # Include page numbers (for PDFs)
+    include_page_numbers: true
+    
+    # Include similarity scores
+    include_scores: false
+    
+    # Separator between chunks
+    chunk_separator: "\n---\n"
+    
+    # Prefix for each chunk
+    chunk_prefix: "[Source {source}]\n"
+  
+  # Caching
+  cache:
+    # Enable result caching
+    enabled: false
+    
+    # Cache TTL in seconds
+    ttl: 3600
+    
+    # Maximum cache size (number of queries)
+    max_size: 1000
+
+# ============================================================================
+# PERFORMANCE TUNING
+# ============================================================================
+performance:
+  # Parallel processing
+  parallel:
+    # Enable parallel processing
+    enabled: true
+    
+    # Number of worker threads (0 = auto, based on CPU cores)
+    num_workers: 10
+    
+    # Batch size for parallel processing
+    batch_size: 32
+  
+  # Memory management
+  memory:
+    # Maximum memory usage in GB (0 = unlimited)
+    max_memory_gb: 0
+    
+    # Clear cache when memory exceeds threshold
+    clear_cache_on_threshold: true
+    
+    # Memory threshold percentage (0-100)
+    memory_threshold: 80
+  
+  # GPU acceleration (if available)
+  gpu:
+    # Enable GPU acceleration
+    enabled: true
+    
+    # GPU device ID
+    device_id: 0
+
+# ============================================================================
+# LOGGING AND MONITORING
+# ============================================================================
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+  
+  # Log file path (empty = console only)
+  file_path: "logs/rag_system.log"
+  
+  # Log format
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # Enable performance metrics logging
+  log_performance: true
+  
+  # Log API calls
+  log_api_calls: false
+
+# ============================================================================
+# MULTIMODAL SETTINGS
+# ============================================================================
+multimodal:
+  # Enable multimodal processing
+  enabled: true
+  
+  # Image preprocessing
+  image:
+    # Resize images before embedding (0 = no resize)
+    max_width: 0
+    max_height: 0
+    
+    # Image quality (1-100)
+    quality: 95
+    
+    # Convert to grayscale
+    grayscale: false
+  
+  # Video processing (future)
+  video:
+    # Enable video processing
+    enabled: false
+    
+    # Frame extraction rate (frames per second)
+    fps: 1
+    
+    # Maximum number of frames per video
+    max_frames: 100
+
+# ============================================================================
+# ADVANCED SETTINGS
+# ============================================================================
+advanced:
+  # Enable experimental features
+  experimental_features: false
+  
+  # Query transformations
+  query_transformation:
+    # Expand queries with synonyms
+    expand_synonyms: false
+    
+    # Rephrase queries for better matching
+    rephrase_query: false
+    
+    # Generate multiple query variations
+    multi_query: false
+    
+    # Number of query variations
+    num_variations: 3
+  
+  # Document filtering
+  filtering:
+    # Filter by date (if metadata available)
+    enable_date_filter: false
+    
+    # Filter by document type
+    enable_type_filter: false
+    
+    # Filter by custom metadata
+    enable_metadata_filter: false
+  
+  # Result ranking
+  ranking:
+    # Ranking algorithm: similarity, bm25, hybrid
+    algorithm: "similarity"
+    
+    # BM25 parameters (if using BM25)
+    bm25_k1: 1.5
+    bm25_b: 0.75
+    
+    # Hybrid weights (if using hybrid)
+    semantic_weight: 0.7
+    keyword_weight: 0.3
+
+# ============================================================================
+# QUALITY SETTINGS
+# ============================================================================
+quality:
+  # Deduplication
+  deduplication:
+    # Enable result deduplication
+    enabled: true
+    
+    # Similarity threshold for duplicates (0.0-1.0)
+    threshold: 0.95
+  
+  # Answer quality
+  answer:
+    # Minimum answer length (characters)
+    min_length: 50
+    
+    # Maximum answer length (characters)
+    max_length: 2000
+    
+    # Require complete sentences
+    require_complete_sentences: true
+
+# ============================================================================
+# DEVELOPMENT SETTINGS
+# ============================================================================
+development:
+  # Debug mode
+  debug: false
+  
+  # Verbose output
+  verbose: false
+  
+  # Profile performance
+  profile: false
+  
+  # Save intermediate results
+  save_intermediates: false
+  
+  # Intermediate results path
+  intermediates_path: "debug/intermediates"
