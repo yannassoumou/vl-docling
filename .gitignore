@@ -37,6 +37,7 @@ env/
 vector_store/
 *.bin
 metadata.json
+query_results/
 
 # Environment
 .env

@@ -6,6 +6,7 @@ from document_processor import Document, DocumentProcessor
 from vector_store import VectorStore
 from milvus_store import MilvusStore
 from vector_store_factory import create_vector_store
+from query_result_saver import QueryResultSaver
 from config import TOP_K
 from config_loader import load_config
 
@@ -76,6 +77,16 @@ class RAGEngine:
             except Exception as e:
                 print(f"[WARNING] Reranker enabled but failed to initialize: {e}")
                 self.reranker_enabled = False
+        
+        # Initialize query result saver if enabled
+        query_config = config.get('query_results', {})
+        self.save_query_results = query_config.get('save_results', False)
+        if self.save_query_results:
+            output_dir = query_config.get('output_dir', 'query_results')
+            self.query_saver = QueryResultSaver(output_dir=output_dir)
+            print(f"[INFO] Query result saving enabled: {output_dir}")
+        else:
+            self.query_saver = None
     
     def ingest_text(self, text: str, metadata: Dict[str, Any] = None):
         """
@@ -125,7 +136,7 @@ class RAGEngine:
         
         self.vector_store.add_chunks(all_chunks)
     
-    def retrieve(self, query: str, top_k: int = None, verbose: bool = False) -> List[Dict[str, Any]]:
+    def retrieve(self, query: str, top_k: int = None, verbose: bool = False, save_results: bool = None) -> List[Dict[str, Any]]:
         """
         Retrieve relevant document chunks for a query.
         
@@ -133,11 +144,15 @@ class RAGEngine:
             query: The search query
             top_k: Number of results to return (uses default if not specified)
             verbose: Show detailed reranking process
+            save_results: Save query results to disk (overrides config setting if specified)
             
         Returns:
             List of dictionaries with chunk content, metadata, and scores
         """
         k = top_k or self.top_k
+        
+        # Determine if we should save results
+        should_save = save_results if save_results is not None else self.save_query_results
         
         # If reranker is enabled, retrieve more candidates for reranking
         if self.reranker_enabled and self.reranker:
@@ -198,6 +213,19 @@ class RAGEngine:
                         print(f"  #{res['new_rank']} {change_indicator} | Rerank: {rerank_score_str} | Vector: {res['score']:.4f} | {filename}")
                     print("="*80 + "\n")
                 
+                # Save results if enabled
+                if should_save and self.query_saver:
+                    self.query_saver.save_query_results(
+                        query=query,
+                        raw_results=initial_results,
+                        reranked_results=final_results,
+                        metadata={
+                            'rerank_top_k': self.rerank_top_k,
+                            'final_top_k': len(final_results),
+                            'verbose': verbose
+                        }
+                    )
+                
                 return final_results
                 
             except Exception as e:
@@ -205,12 +233,27 @@ class RAGEngine:
                     print(f"\n[WARNING] Reranking failed: {e}")
                     print("[FALLBACK] Using initial vector search results\n")
                     print("="*80 + "\n")
-                return initial_results[:k]
+                
+                # Save results even on fallback
+                fallback_results = initial_results[:k]
+                if should_save and self.query_saver:
+                    self.query_saver.save_query_results(
+                        query=query,
+                        raw_results=initial_results,
+                        reranked_results=None,
+                        metadata={
+                            'reranker_failed': True,
+                            'error': str(e),
+                            'fallback_to_raw': True
+                        }
+                    )
+                
+                return fallback_results
         else:
             # No reranker, use standard retrieval
             results = self.vector_store.search(query, top_k=k)
             
-            return [
+            raw_results = [
                 {
                     'content': chunk.content,
                     'metadata': chunk.metadata,
@@ -219,6 +262,19 @@ class RAGEngine:
                 }
                 for chunk, score in results
             ]
+            
+            # Save results if enabled (no reranking)
+            if should_save and self.query_saver:
+                self.query_saver.save_query_results(
+                    query=query,
+                    raw_results=raw_results,
+                    reranked_results=None,
+                    metadata={
+                        'reranker_enabled': False
+                    }
+                )
+            
+            return raw_results
     
     def get_context(self, query: str, top_k: int = None) -> str:
         """

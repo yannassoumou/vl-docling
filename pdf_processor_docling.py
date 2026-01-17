@@ -6,7 +6,6 @@ Uses Granite API via Docling's VLM pipeline for clean DOCTAGS output.
 """
 
 import os
-import time
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
@@ -197,9 +196,6 @@ class DoclingPDFProcessor:
         """
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-        
-        # Add small delay to prevent overwhelming the API (rate limiting)
-        time.sleep(0.1)
         
         # Convert PDF using Docling VLM pipeline
         result = self.converter.convert(pdf_path)

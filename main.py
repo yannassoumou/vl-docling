@@ -68,6 +68,10 @@ Examples:
                             help='Only show context without full formatting')
     query_parser.add_argument('--verbose', action='store_true',
                             help='Show detailed reranking process (before/after scores)')
+    query_parser.add_argument('--save-results', action='store_true', default=None,
+                            help='Save query results to disk (overrides config)')
+    query_parser.add_argument('--no-save-results', action='store_true',
+                            help='Do not save query results (overrides config)')
     
     # Stats command
     subparsers.add_parser('stats', help='Show statistics about the RAG system')
@@ -78,6 +82,15 @@ Examples:
     # Interactive command
     interactive_parser = subparsers.add_parser('interactive', help='Start interactive query mode')
     interactive_parser.add_argument('--top-k', type=int, default=5, help='Number of documents to retrieve')
+    
+    # List saved queries command
+    subparsers.add_parser('list-queries', help='List all saved query results')
+    
+    # Load query results command
+    load_query_parser = subparsers.add_parser('load-query', help='Load and display saved query results')
+    load_query_parser.add_argument('folder', type=str, help='Query results folder name or path')
+    load_query_parser.add_argument('--show-content', action='store_true',
+                                   help='Show full content of results')
     
     args = parser.parse_args()
     
@@ -105,6 +118,13 @@ Examples:
         handle_clear(rag)
     elif args.command == 'interactive':
         handle_interactive(rag, args)
+    elif args.command == 'list-queries':
+        handle_list_queries(rag)
+    elif args.command == 'load-query':
+        handle_load_query(rag, args)
+    else:
+        parser.print_help()
+        sys.exit(1)
 
 
 def handle_ingest(rag: RAGEngine, args):
@@ -150,7 +170,24 @@ def handle_query(rag: RAGEngine, args):
         sys.exit(1)
     
     verbose = args.verbose if hasattr(args, 'verbose') else False
-    result = rag.query(args.question, top_k=args.top_k, verbose=verbose)
+    
+    # Determine save_results setting
+    save_results = None
+    if hasattr(args, 'save_results') and args.save_results:
+        save_results = True
+    elif hasattr(args, 'no_save_results') and args.no_save_results:
+        save_results = False
+    
+    # Use retrieve with save_results parameter
+    retrieved_docs = rag.retrieve(args.question, top_k=args.top_k, verbose=verbose, save_results=save_results)
+    context = rag.get_context(args.question, top_k=args.top_k)
+    
+    result = {
+        'question': args.question,
+        'context': context,
+        'retrieved_docs': retrieved_docs,
+        'num_docs': len(retrieved_docs)
+    }
     
     if args.context_only:
         print(result['context'])
@@ -182,6 +219,112 @@ def handle_clear(rag: RAGEngine):
         print("Vector store cleared successfully")
     else:
         print("Operation cancelled")
+
+
+def handle_list_queries(rag: RAGEngine):
+    """Handle listing saved query results."""
+    if not rag.query_saver:
+        print("Query result saving is not enabled. Set 'query_results.save_results: true' in config.yaml")
+        return
+    
+    queries = rag.query_saver.list_saved_queries()
+    
+    if not queries:
+        print("No saved query results found.")
+        return
+    
+    print("\n" + "=" * 80)
+    print("SAVED QUERY RESULTS")
+    print("=" * 80)
+    print(f"Total saved queries: {len(queries)}\n")
+    
+    for i, q in enumerate(queries, 1):
+        timestamp = q.get('timestamp', 'Unknown')
+        query_text = q.get('query', 'Unknown')
+        raw_count = q.get('raw_result_count', 0)
+        reranked_count = q.get('reranked_result_count', 0)
+        folder = q.get('folder', '')
+        
+        print(f"{i}. [{timestamp}]")
+        print(f"   Query: {query_text[:70]}{'...' if len(query_text) > 70 else ''}")
+        print(f"   Results: {raw_count} raw, {reranked_count} reranked")
+        print(f"   Folder: {folder}")
+        print()
+    
+    print("=" * 80)
+    print(f"\nTo load a query result: python main.py load-query <folder_name>")
+
+
+def handle_load_query(rag: RAGEngine, args):
+    """Handle loading saved query results."""
+    if not rag.query_saver:
+        print("Query result saving is not enabled. Set 'query_results.save_results: true' in config.yaml")
+        return
+    
+    # Determine folder path
+    import os
+    folder_path = args.folder
+    if not os.path.isabs(folder_path):
+        # Relative path, assume it's in the query_results directory
+        folder_path = os.path.join(rag.query_saver.output_dir, args.folder)
+    
+    if not os.path.exists(folder_path):
+        print(f"Error: Query results folder not found: {folder_path}")
+        return
+    
+    # Load results
+    results = rag.query_saver.load_query_results(folder_path)
+    
+    if 'metadata' not in results:
+        print(f"Error: Invalid query results folder (no metadata found)")
+        return
+    
+    metadata = results['metadata']
+    print("\n" + "=" * 80)
+    print("LOADED QUERY RESULTS")
+    print("=" * 80)
+    print(f"Query: {metadata.get('query', 'Unknown')}")
+    print(f"Timestamp: {metadata.get('timestamp', 'Unknown')}")
+    print(f"Reranker used: {'Yes' if metadata.get('reranker_used', False) else 'No'}")
+    print("=" * 80 + "\n")
+    
+    # Show raw results
+    if 'raw' in results:
+        raw_data = results['raw']
+        print(f"Raw Retrieval Results ({raw_data.get('result_count', 0)} results):")
+        print("-" * 80)
+        for i, result in enumerate(raw_data.get('results', [])[:10], 1):  # Show top 10
+            source = result.get('metadata', {}).get('source', 'Unknown')
+            score = result.get('score', 0.0)
+            print(f"{i}. Score: {score:.4f} | {os.path.basename(source)}")
+            if args.show_content:
+                content = result.get('content', '')[:200]
+                print(f"   {content}...\n")
+        print()
+    
+    # Show reranked results
+    if 'reranked' in results:
+        reranked_data = results['reranked']
+        print(f"Reranked Results ({reranked_data.get('result_count', 0)} results):")
+        print("-" * 80)
+        for i, result in enumerate(reranked_data.get('results', []), 1):
+            source = result.get('metadata', {}).get('source', 'Unknown')
+            score = result.get('score', 0.0)
+            rerank_score = result.get('rerank_score', 'N/A')
+            original_rank = result.get('original_rank', '?')
+            
+            rerank_str = f"{rerank_score:.4f}" if isinstance(rerank_score, (int, float)) else str(rerank_score)
+            rank_change = original_rank - i if isinstance(original_rank, int) else 0
+            change_str = f"(+{rank_change})" if rank_change > 0 else f"({rank_change})" if rank_change < 0 else "(=)"
+            
+            print(f"{i}. {change_str} Rerank: {rerank_str} | Vector: {score:.4f} | {os.path.basename(source)}")
+            if args.show_content:
+                content = result.get('content', '')[:200]
+                print(f"   {content}...\n")
+        print()
+    
+    print("=" * 80)
+    print(f"Results loaded from: {folder_path}")
 
 
 def handle_interactive(rag: RAGEngine, args):

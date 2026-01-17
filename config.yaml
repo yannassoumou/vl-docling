@@ -196,19 +196,12 @@ document_processing:
     use_threads_for_io: true
     
     # Number of parallel workers (null = auto-detect CPU count)
-    # IMPORTANT: For API-based processing (PDF with Granite), keep this LOW to avoid overwhelming the API
-    # Recommended: 2-4 workers for API calls to prevent connection errors
-    # For local processing only (no PDFs), you can use null for auto-detect
-    max_workers: 2
+    # Recommended: leave as null to use all CPU cores (24 cores on your system)
+    max_workers: null
     
     # Minimum files to trigger parallel processing
     # For small file counts, sequential is faster
     min_files_for_parallel: 2
-    
-    # Rate limiting for API calls (prevents overwhelming the server)
-    # Delay between starting each parallel worker (seconds)
-    # Increase if getting "connection refused" errors
-    worker_start_delay: 0.3
   
   # Supported file extensions
   supported_extensions:
@@ -385,6 +378,27 @@ performance:
     
     # GPU device ID
     device_id: 0
+
+# ============================================================================
+# QUERY RESULT SAVING (for evaluation and reuse)
+# ============================================================================
+query_results:
+  # Enable saving query results to disk
+  save_results: true
+  
+  # Output directory for query results
+  output_dir: "query_results"
+  
+  # Each query creates a timestamped folder with:
+  # - query_metadata.json: query text, timestamp, counts
+  # - raw_retrieval.json: raw vector search results
+  # - reranked_results.json: reranked results (if reranker is enabled)
+  #
+  # Use cases:
+  # - Evaluation: Compare raw vs reranked results
+  # - LLM Integration: Load reranked results directly without re-running retrieval
+  # - Analysis: Analyze retrieval patterns and quality
+  # - Debugging: Inspect what the system retrieved for each query
 
 # ============================================================================
 # LOGGING AND MONITORING
