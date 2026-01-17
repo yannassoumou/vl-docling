@@ -1,6 +1,7 @@
 import os
 import hashlib
 import re
+import time
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
@@ -683,11 +684,18 @@ class DocumentProcessor:
                 # Thread-based parallelism (better for I/O-heavy operations like PDF API calls)
                 print(f"  Using {max_workers} parallel workers (threading - optimal for I/O-heavy operations)")
                 
+                # Get rate limiting settings
+                worker_start_delay = parallel_config.get('worker_start_delay', 0.3)
+                
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    future_to_file = {
-                        executor.submit(self._load_file_safe, file_path, directory_path): file_path 
-                        for file_path in all_files
-                    }
+                    future_to_file = {}
+                    
+                    # Submit tasks with delay to prevent overwhelming the API
+                    for file_path in all_files:
+                        future = executor.submit(self._load_file_safe, file_path, directory_path)
+                        future_to_file[future] = file_path
+                        # Small delay between submitting each task
+                        time.sleep(worker_start_delay)
                     
                     completed = 0
                     for future in as_completed(future_to_file):

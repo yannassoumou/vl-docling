@@ -196,12 +196,19 @@ document_processing:
     use_threads_for_io: true
     
     # Number of parallel workers (null = auto-detect CPU count)
-    # Recommended: leave as null to use all CPU cores (24 cores on your system)
-    max_workers: null
+    # IMPORTANT: For API-based processing (PDF with Granite), keep this LOW to avoid overwhelming the API
+    # Recommended: 2-4 workers for API calls to prevent connection errors
+    # For local processing only (no PDFs), you can use null for auto-detect
+    max_workers: 2
     
     # Minimum files to trigger parallel processing
     # For small file counts, sequential is faster
     min_files_for_parallel: 2
+    
+    # Rate limiting for API calls (prevents overwhelming the server)
+    # Delay between starting each parallel worker (seconds)
+    # Increase if getting "connection refused" errors
+    worker_start_delay: 0.3
   
   # Supported file extensions
   supported_extensions:
