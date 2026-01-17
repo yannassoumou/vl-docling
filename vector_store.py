@@ -132,11 +132,32 @@ class VectorStore:
                 all_embeddings = embedding_batches
             except Exception as e:
                 print(f"  Async embedding failed: {e}, falling back to sync")
-                # Fallback to synchronous processing
+                # Fallback to synchronous processing with image support
                 for i in tqdm(range(0, len(new_chunks), batch_size), desc="Generating embeddings"):
                     batch = new_chunks[i:i + batch_size]
                     texts = [chunk.content for chunk in batch]
-                    embeddings = self.embedding_client.get_embeddings(texts)
+                    
+                    # Check if any chunks have images
+                    images = []
+                    has_images = False
+                    for chunk in batch:
+                        if chunk.metadata.get('has_image') and chunk.metadata.get('image_path'):
+                            try:
+                                from PIL import Image as PILImage
+                                image = PILImage.open(chunk.metadata['image_path'])
+                                images.append(image)
+                                has_images = True
+                            except Exception as e:
+                                print(f"  [WARNING] Failed to load image {chunk.metadata['image_path']}: {e}")
+                                images.append(None)
+                        else:
+                            images.append(None)
+                    
+                    # Generate embeddings
+                    if has_images:
+                        embeddings = self.embedding_client.get_embeddings(texts, images=images)
+                    else:
+                        embeddings = self.embedding_client.get_embeddings(texts)
                     all_embeddings.append(embeddings)
         else:
             # Synchronous processing
@@ -144,7 +165,29 @@ class VectorStore:
                 batch = new_chunks[i:i + batch_size]
                 texts = [chunk.content for chunk in batch]
                 
-                embeddings = self.embedding_client.get_embeddings(texts)
+                # Check if any chunks have images (multimodal embedding)
+                images = []
+                has_images = False
+                for chunk in batch:
+                    if chunk.metadata.get('has_image') and chunk.metadata.get('image_path'):
+                        # Load image for multimodal embedding
+                        try:
+                            from PIL import Image as PILImage
+                            image = PILImage.open(chunk.metadata['image_path'])
+                            images.append(image)
+                            has_images = True
+                        except Exception as e:
+                            print(f"  [WARNING] Failed to load image {chunk.metadata['image_path']}: {e}")
+                            images.append(None)
+                    else:
+                        images.append(None)
+                
+                # Generate embeddings (multimodal if images present)
+                if has_images:
+                    embeddings = self.embedding_client.get_embeddings(texts, images=images)
+                else:
+                    embeddings = self.embedding_client.get_embeddings(texts)
+                
                 all_embeddings.append(embeddings)
         
         # Ensure all_embeddings is a list of arrays

@@ -40,6 +40,14 @@ except ImportError:
     DOCX_SUPPORT = False
     print("[WARNING] python-docx not available. DOCX processing disabled.")
 
+# Import PIL for image processing
+try:
+    from PIL import Image as PILImage
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    print("[WARNING] PIL/Pillow not available. Image processing disabled.")
+
 
 # Global function for parallel processing (must be at module level for pickling)
 def _process_single_file(args):
@@ -386,6 +394,7 @@ class DocumentProcessor:
     def load_text_file(self, file_path: str) -> Document:
         """
         Load a text file as a document.
+        Supports text files, PDFs, PPTX, DOCX, and images (PNG, JPG, JPEG).
         
         Args:
             file_path: Path to the text file
@@ -406,6 +415,10 @@ class DocumentProcessor:
         # Handle DOCX files
         elif file_lower.endswith('.docx'):
             return self._load_docx_file(file_path)
+        
+        # Handle image files (PNG, JPG, JPEG)
+        elif file_lower.endswith(('.png', '.jpg', '.jpeg')):
+            return self._process_image_file(file_path)
         
         # Regular text file
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -556,6 +569,51 @@ class DocumentProcessor:
         except Exception as e:
             raise Exception(f"Failed to process DOCX {file_path}: {str(e)}")
     
+    def _process_image_file(self, file_path: str) -> Document:
+        """
+        Process an image file (PNG, JPG, JPEG) for multimodal embedding.
+        
+        The image will be embedded directly using Qwen3-VL-Embedding's
+        multimodal capabilities. The document content includes both a text
+        description and stores the image path for embedding.
+        
+        Args:
+            file_path: Path to the image file
+            
+        Returns:
+            Document object with image metadata
+        """
+        if not PIL_AVAILABLE:
+            raise Exception("PIL/Pillow is required for image processing. Install with: pip install Pillow")
+        
+        try:
+            # Load image to verify it's valid
+            image = PILImage.open(file_path)
+            width, height = image.size
+            format_name = image.format
+            
+            # Create text description of the image
+            filename = os.path.basename(file_path)
+            content = f"Image file: {filename}"
+            
+            # Store image metadata (the actual image will be loaded during embedding)
+            metadata = {
+                'source': file_path,
+                'filename': filename,
+                'type': 'image',
+                'image_path': file_path,
+                'image_width': width,
+                'image_height': height,
+                'image_format': format_name,
+                'has_image': True,  # Flag to indicate this should use multimodal embedding
+                'processor': 'PIL'
+            }
+            
+            return Document(content=content, metadata=metadata)
+            
+        except Exception as e:
+            raise Exception(f"Failed to process image {file_path}: {str(e)}")
+    
     def _load_file_safe(self, file_path: str, directory_path: str) -> tuple:
         """
         Safely load a file and return result with status.
@@ -583,7 +641,7 @@ class DocumentProcessor:
             List of Document objects
         """
         if extensions is None:
-            extensions = ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.pdf', '.pptx', '.docx']
+            extensions = ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.pdf', '.pptx', '.docx', '.png', '.jpg', '.jpeg']
         
         # Load config for parallel settings
         config = load_config()

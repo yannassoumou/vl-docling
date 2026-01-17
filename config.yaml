@@ -214,6 +214,11 @@ document_processing:
     - ".css"
     - ".json"
     - ".xml"
+    - ".pptx"
+    - ".docx"
+    - ".png"   # Image files (multimodal embedding)
+    - ".jpg"   # Image files (multimodal embedding)
+    - ".jpeg"  # Image files (multimodal embedding)
 
 # ============================================================================
 # RETRIEVAL CONFIGURATION
