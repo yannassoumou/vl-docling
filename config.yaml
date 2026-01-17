@@ -21,11 +21,21 @@ embedding:
   # Batch size for embedding generation
   batch_size: 32
   
+  # Maximum batch size supported by API (use this for optimal performance)
+  # Set to API's maximum allowed batch size to minimize round-trip overhead
+  max_batch_size: 128
+  
   # Maximum retries on API failure
   max_retries: 3
   
   # Retry delay in seconds
   retry_delay: 1
+  
+  # Enable async/parallel API calls for better throughput
+  async_enabled: true
+  
+  # Maximum concurrent API requests (for async mode)
+  max_concurrent_requests: 10
 
 # ============================================================================
 # RERANKER API CONFIGURATION (Future)
@@ -58,16 +68,33 @@ reranker:
 document_processing:
   # Text chunking strategy
   chunking:
-    # Size of each text chunk in characters
+    # Chunking mode: "tokens" (recommended) or "characters" (legacy)
+    # Token-based chunking is more faithful to the embedding model's context window
+    mode: "tokens"
+    
+    # Tokenizer model to use (for token-based chunking)
+    # Options: "cl100k_base" (GPT-4/3.5), "p50k_base" (GPT-3), "r50k_base" (GPT-2)
+    # For Qwen models, "cl100k_base" is recommended
+    tokenizer_model: "cl100k_base"
+    
+    # Default chunk size in tokens (when mode is "tokens")
+    # Recommended: 512-1024 tokens for most models
+    chunk_size_tokens: 512
+    
+    # Default chunk size in characters (when mode is "characters" or as fallback)
     chunk_size: 500
     
-    # Overlap between consecutive chunks in characters
+    # Overlap between consecutive chunks
+    # In tokens when mode is "tokens", in characters when mode is "characters"
+    chunk_overlap_tokens: 50
     chunk_overlap: 50
     
     # Minimum chunk size (discard smaller chunks)
+    min_chunk_size_tokens: 50
     min_chunk_size: 50
     
     # Maximum chunk size (split larger chunks)
+    max_chunk_size_tokens: 2048
     max_chunk_size: 2000
     
     # Sentence splitting (try to break at sentence boundaries)
@@ -75,6 +102,46 @@ document_processing:
     
     # Paragraph splitting (try to keep paragraphs together)
     respect_paragraph_boundary: true
+    
+    # Per-type chunk size overrides (in tokens)
+    # Allows different chunk sizes for different content types
+    per_type_overrides:
+      # Code files - larger chunks to preserve context
+      code:
+        chunk_size_tokens: 1024
+        chunk_overlap_tokens: 100
+        extensions: [".py", ".js", ".ts", ".java", ".cpp", ".c", ".h", ".hpp", ".go", ".rs", ".rb", ".php", ".swift", ".kt", ".scala"]
+      
+      # Dense tables/data - smaller chunks for precision
+      table:
+        chunk_size_tokens: 256
+        chunk_overlap_tokens: 25
+        # Detected by content patterns (markdown tables, CSV-like structures)
+        patterns: ["|", "\t", ",,,"]
+      
+      # Documentation/markdown - medium chunks
+      documentation:
+        chunk_size_tokens: 512
+        chunk_overlap_tokens: 50
+        extensions: [".md", ".rst", ".txt", ".adoc"]
+      
+      # PDF documents - medium chunks
+      pdf:
+        chunk_size_tokens: 512
+        chunk_overlap_tokens: 50
+        extensions: [".pdf"]
+      
+      # Office documents - medium chunks
+      office:
+        chunk_size_tokens: 512
+        chunk_overlap_tokens: 50
+        extensions: [".docx", ".pptx", ".xlsx"]
+      
+      # JSON/XML structured data - larger chunks to preserve structure
+      structured:
+        chunk_size_tokens: 768
+        chunk_overlap_tokens: 75
+        extensions: [".json", ".xml", ".yaml", ".yml", ".toml"]
   
   # PDF processing settings
   pdf:
@@ -117,10 +184,15 @@ document_processing:
     enabled: true
     
     # Parallel mode: "process" or "thread"
-    # - "process": True parallel processing, bypasses Python GIL (MUCH FASTER)
-    # - "thread": Thread-based, limited by GIL (slower but more compatible)
-    # Recommended: "process" for maximum speed
+    # - "process": True parallel processing, bypasses Python GIL (MUCH FASTER for CPU-bound tasks)
+    # - "thread": Thread-based, limited by GIL but better for I/O-heavy operations (API calls, file I/O)
+    # Recommended: "process" for maximum speed, but auto-switches to "thread" for PDFs with API calls
     mode: "process"
+    
+    # Automatically use threads for I/O-heavy operations (PDFs with API calls)
+    # When true, automatically switches to ThreadPoolExecutor when PDFs are detected
+    # This is optimal for I/O-bound operations like API calls
+    use_threads_for_io: true
     
     # Number of parallel workers (null = auto-detect CPU count)
     # Recommended: leave as null to use all CPU cores (24 cores on your system)

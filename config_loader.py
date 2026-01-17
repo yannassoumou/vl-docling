@@ -123,7 +123,10 @@ class ConfigLoader:
             'embedding': {
                 'api_url': 'http://100.126.235.19:8888/v1/embeddings',
                 'timeout': 60,
-                'batch_size': 32
+                'batch_size': 32,
+                'max_batch_size': 128,
+                'async_enabled': True,
+                'max_concurrent_requests': 10
             },
             'reranker': {
                 'enabled': False,
@@ -133,12 +136,61 @@ class ConfigLoader:
             },
             'document_processing': {
                 'chunking': {
+                    'mode': 'tokens',
+                    'tokenizer_model': 'cl100k_base',
+                    'chunk_size_tokens': 512,
                     'chunk_size': 500,
-                    'chunk_overlap': 50
+                    'chunk_overlap_tokens': 50,
+                    'chunk_overlap': 50,
+                    'min_chunk_size_tokens': 50,
+                    'min_chunk_size': 50,
+                    'max_chunk_size_tokens': 2048,
+                    'max_chunk_size': 2000,
+                    'respect_sentence_boundary': True,
+                    'respect_paragraph_boundary': True,
+                    'per_type_overrides': {
+                        'code': {
+                            'chunk_size_tokens': 1024,
+                            'chunk_overlap_tokens': 100,
+                            'extensions': ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.h', '.hpp', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.scala']
+                        },
+                        'table': {
+                            'chunk_size_tokens': 256,
+                            'chunk_overlap_tokens': 25,
+                            'patterns': ['|', '\t', ',,,']
+                        },
+                        'documentation': {
+                            'chunk_size_tokens': 512,
+                            'chunk_overlap_tokens': 50,
+                            'extensions': ['.md', '.rst', '.txt', '.adoc']
+                        },
+                        'pdf': {
+                            'chunk_size_tokens': 512,
+                            'chunk_overlap_tokens': 50,
+                            'extensions': ['.pdf']
+                        },
+                        'office': {
+                            'chunk_size_tokens': 512,
+                            'chunk_overlap_tokens': 50,
+                            'extensions': ['.docx', '.pptx', '.xlsx']
+                        },
+                        'structured': {
+                            'chunk_size_tokens': 768,
+                            'chunk_overlap_tokens': 75,
+                            'extensions': ['.json', '.xml', '.yaml', '.yml', '.toml']
+                        }
+                    }
                 },
                 'pdf': {
                     'dpi': 150,
                     'extract_text': True
+                },
+                'parallel': {
+                    'enabled': True,
+                    'mode': 'process',
+                    'use_threads_for_io': True,
+                    'max_workers': None,
+                    'min_files_for_parallel': 2
                 }
             },
             'retrieval': {

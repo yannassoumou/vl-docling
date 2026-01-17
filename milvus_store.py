@@ -24,6 +24,7 @@ from config import (
     MILVUS_INDEX_TYPE,
     MILVUS_METRIC_TYPE
 )
+from config_loader import get_config
 
 
 class MilvusStore:
@@ -144,28 +145,98 @@ class MilvusStore:
         
         print(f"✓ Created index: {MILVUS_INDEX_TYPE} with metric {MILVUS_METRIC_TYPE}")
     
-    def add_chunks(self, chunks: List[DocumentChunk], batch_size: int = 32):
+    def add_chunks(self, chunks: List[DocumentChunk], batch_size: int = None):
         """
         Add document chunks to the vector store.
         
         Args:
             chunks: List of document chunks to add
-            batch_size: Number of chunks to process at once
+            batch_size: Number of chunks to process at once (None = use config max_batch_size)
         """
         if not chunks:
             return
         
-        print(f"Adding {len(chunks)} chunks to Milvus...")
+        # Get batch size from config if not provided
+        if batch_size is None:
+            batch_size = get_config('embedding.max_batch_size', 128)
         
-        # Generate embeddings in batches
+        # Get embedding model version
+        embedding_model_version = self.embedding_client.get_model_version()
+        
+        # Check for duplicates and add metadata
+        new_chunks = []
+        duplicate_count = 0
+        
+        for chunk in chunks:
+            # Add embedding model version to metadata
+            chunk.metadata['embedding_model_version'] = embedding_model_version
+            
+            # Check for duplicate using chunk-level hash (more granular) or document-level hash
+            chunk_hash = chunk.metadata.get('chunk_content_hash')
+            doc_hash = chunk.metadata.get('content_hash')
+            
+            if chunk_hash:
+                # Check if we already have a chunk with this exact content
+                is_duplicate = False
+                for existing_chunk in self.chunks:
+                    existing_chunk_hash = existing_chunk.metadata.get('chunk_content_hash')
+                    if existing_chunk_hash == chunk_hash:
+                        is_duplicate = True
+                        duplicate_count += 1
+                        break
+                
+                if not is_duplicate:
+                    new_chunks.append(chunk)
+            elif doc_hash:
+                # Fallback to document-level hash if chunk hash not available
+                is_duplicate = False
+                for existing_chunk in self.chunks:
+                    if existing_chunk.metadata.get('content_hash') == doc_hash:
+                        is_duplicate = True
+                        duplicate_count += 1
+                        break
+                
+                if not is_duplicate:
+                    new_chunks.append(chunk)
+            else:
+                # No hash available, add anyway
+                new_chunks.append(chunk)
+        
+        if duplicate_count > 0:
+            print(f"  Skipped {duplicate_count} duplicate chunk(s) based on content hash")
+        
+        if not new_chunks:
+            print("No new chunks to add (all were duplicates)")
+            return
+        
+        print(f"Adding {len(new_chunks)} chunks to Milvus...")
+        
+        # Generate embeddings in batches (using max_batch_size for optimal performance)
         all_embeddings = []
         
-        for i in tqdm(range(0, len(chunks), batch_size), desc="Generating embeddings"):
-            batch = chunks[i:i + batch_size]
-            texts = [chunk.content for chunk in batch]
+        # Use async if enabled, otherwise sync
+        async_enabled = get_config('embedding.async_enabled', True)
+        
+        if async_enabled and hasattr(self.embedding_client, 'get_embeddings_async_batch'):
+            # Prepare batches for async processing
+            text_batches = []
+            for i in range(0, len(new_chunks), batch_size):
+                batch = new_chunks[i:i + batch_size]
+                texts = [chunk.content for chunk in batch]
+                text_batches.append(texts)
             
-            embeddings = self.embedding_client.get_embeddings(texts)
-            all_embeddings.append(embeddings)
+            # Get embeddings asynchronously
+            print(f"  Using async embedding generation with {len(text_batches)} batch(es)...")
+            embedding_batches = self.embedding_client.get_embeddings_async_batch(text_batches)
+            all_embeddings = embedding_batches
+        else:
+            # Synchronous processing
+            for i in tqdm(range(0, len(new_chunks), batch_size), desc="Generating embeddings"):
+                batch = new_chunks[i:i + batch_size]
+                texts = [chunk.content for chunk in batch]
+                
+                embeddings = self.embedding_client.get_embeddings(texts)
+                all_embeddings.append(embeddings)
         
         # Concatenate all embeddings
         embeddings_array = np.vstack(all_embeddings)
@@ -188,7 +259,7 @@ class MilvusStore:
         contents = []
         metadatas = []
         
-        for i, chunk in enumerate(chunks):
+        for i, chunk in enumerate(new_chunks):
             chunk.chunk_id = start_id + i
             chunk_ids.append(chunk.chunk_id)
             contents.append(chunk.content)
@@ -213,9 +284,9 @@ class MilvusStore:
         self.collection.load()
         
         # Store chunks locally for metadata retrieval
-        self.chunks.extend(chunks)
+        self.chunks.extend(new_chunks)
         
-        print(f"Successfully added {len(chunks)} chunks. Total chunks: {len(self.chunks)}")
+        print(f"Successfully added {len(new_chunks)} chunks. Total chunks: {len(self.chunks)}")
     
     def search(self, query: str, top_k: int = 5) -> List[Tuple[DocumentChunk, float]]:
         """
