@@ -32,7 +32,8 @@ embedding:
   retry_delay: 1
   
   # Enable async/parallel API calls for better throughput
-  async_enabled: true
+  # Note: Disabled by default on Windows due to event loop issues
+  async_enabled: false
   
   # Maximum concurrent API requests (for async mode)
   max_concurrent_requests: 10

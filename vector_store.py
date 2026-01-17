@@ -126,8 +126,18 @@ class VectorStore:
             
             # Get embeddings asynchronously
             print(f"  Using async embedding generation with {len(text_batches)} batch(es)...")
-            embedding_batches = self.embedding_client.get_embeddings_async_batch(text_batches)
-            all_embeddings = embedding_batches
+            try:
+                embedding_batches = self.embedding_client.get_embeddings_async_batch(text_batches)
+                # embedding_batches is a list of numpy arrays, one per batch
+                all_embeddings = embedding_batches
+            except Exception as e:
+                print(f"  Async embedding failed: {e}, falling back to sync")
+                # Fallback to synchronous processing
+                for i in tqdm(range(0, len(new_chunks), batch_size), desc="Generating embeddings"):
+                    batch = new_chunks[i:i + batch_size]
+                    texts = [chunk.content for chunk in batch]
+                    embeddings = self.embedding_client.get_embeddings(texts)
+                    all_embeddings.append(embeddings)
         else:
             # Synchronous processing
             for i in tqdm(range(0, len(new_chunks), batch_size), desc="Generating embeddings"):
@@ -136,6 +146,10 @@ class VectorStore:
                 
                 embeddings = self.embedding_client.get_embeddings(texts)
                 all_embeddings.append(embeddings)
+        
+        # Ensure all_embeddings is a list of arrays
+        if not isinstance(all_embeddings, list) or len(all_embeddings) == 0:
+            raise ValueError(f"Expected non-empty list of embeddings, got: {type(all_embeddings)}")
         
         # Concatenate all embeddings
         embeddings_array = np.vstack(all_embeddings)
