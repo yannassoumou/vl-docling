@@ -178,9 +178,16 @@ def handle_query(rag: RAGEngine, args):
     elif hasattr(args, 'no_save_results') and args.no_save_results:
         save_results = False
     
-    # Use retrieve with save_results parameter
+    # Retrieve documents (saves results once)
     retrieved_docs = rag.retrieve(args.question, top_k=args.top_k, verbose=verbose, save_results=save_results)
-    context = rag.get_context(args.question, top_k=args.top_k)
+    
+    # Build context from already retrieved docs (avoid duplicate retrieve call)
+    context_parts = []
+    for i, result in enumerate(retrieved_docs, 1):
+        source = result['metadata'].get('source', 'Unknown')
+        content = result['content']
+        context_parts.append(f"[Source {i}: {source}]\n{content}\n")
+    context = "\n---\n".join(context_parts)
     
     result = {
         'question': args.question,
